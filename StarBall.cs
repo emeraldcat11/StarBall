@@ -27,12 +27,31 @@ namespace StarBall
 
         GraphicsDeviceManager _graphics;
         SpriteBatch _spriteBatch;
+        RenderTarget2D _renderCanvas;
+        Rectangle _renderDestination = Rectangle.Empty;
+
+        bool _isResizing;
+        bool initialSizing;
+
+        int _canvasFixedWidth = 960;
+        int _canvasFixedHeight = 540;
 
         public StarBall()
         {
             _graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
+            Window.AllowUserResizing = true;
+            Window.ClientSizeChanged += OnClientSizeChanged;
+        }
 
+        private void OnClientSizeChanged(object sender, EventArgs e)
+        {
+            if (!_isResizing && Window.ClientBounds.Width > 0 && Window.ClientBounds.Height > 0)
+            {
+                _isResizing = true;
+                CalcRenderDestination();
+                _isResizing = false;
+            }
         }
 
         /// <summary>
@@ -44,16 +63,16 @@ namespace StarBall
         protected override void Initialize()
         {
             // TODO: Add your initialization logic here
-            ballPosition = new Vector2(_graphics.PreferredBackBufferWidth / 2,
-            _graphics.PreferredBackBufferHeight / 2);
+            ballPosition = new Vector2(_canvasFixedWidth / 2, _canvasFixedHeight / 2);
             ballSpeed = 200f;
-            deadZone = 4096;
-            float starX = random.Next(0, _graphics.PreferredBackBufferWidth);
-            float starY = random.Next(0, _graphics.PreferredBackBufferHeight);
+            //deadZone = 4096;
+            float starX = random.Next(0, _canvasFixedWidth);
+            float starY = random.Next(0, _canvasFixedHeight);
             starPosition = new Vector2(starX, starY);
             score = 0;
             gameTitle = "StarBall";
             Window.Title = $"{gameTitle} - Score: {score}";
+
 
             base.Initialize();
 
@@ -67,10 +86,13 @@ namespace StarBall
         {
             // Create a new SpriteBatch, which can be used to draw textures.
             _spriteBatch = new SpriteBatch(GraphicsDevice);
+            // Initialization
+            _renderCanvas = new RenderTarget2D(GraphicsDevice, _canvasFixedWidth, _canvasFixedHeight);
 
             // TODO: Use this.Content to load your game content here
             ballTexture = Content.Load<Texture2D>("ball");
             starTexture = Content.Load<Texture2D>("star");
+
         }
 
         /// <summary>
@@ -80,6 +102,21 @@ namespace StarBall
         protected override void UnloadContent()
         {
             // TODO: Unload any non ContentManager content here
+        }
+
+        private void CalcRenderDestination()
+        {
+            Point size = GraphicsDevice.Viewport.Bounds.Size;
+
+            float scaleX = (float)size.X / _renderCanvas.Width;
+            float scaleY = (float)size.Y / _renderCanvas.Height;
+            float scale = Math.Min(scaleX, scaleY);
+
+            _renderDestination.Width = (int)(_renderCanvas.Width * scale);
+            _renderDestination.Height = (int)(_renderCanvas.Height * scale);
+
+            _renderDestination.X = (size.X - _renderDestination.Width) / 2;
+            _renderDestination.Y = (size.Y - _renderDestination.Height) / 2;
         }
 
         /// <summary>
@@ -137,57 +174,30 @@ namespace StarBall
             }
 
 
-            //if (Joystick.LastConnectedIndex == 0)
-            //{
-            //    JoystickState jstate = Joystick.GetState((int)PlayerIndex.One);
-
-            //    float updatedBallSpeed = ballSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds;
-
-            //    if (jstate.Axes[1] < -deadZone)
-            //    {
-            //        ballPosition.Y -= updatedBallSpeed;
-            //    }
-            //    else if (jstate.Axes[1] > deadZone)
-            //    {
-            //        ballPosition.Y += updatedBallSpeed;
-            //    }
-
-            //    if (jstate.Axes[0] < -deadZone)
-            //    {
-            //        ballPosition.X -= updatedBallSpeed;
-            //    }
-            //    else if (jstate.Axes[0] > deadZone)
-            //    {
-            //        ballPosition.X += updatedBallSpeed;
-            //    }
-            //}
-
-
-            if (ballPosition.X > _graphics.PreferredBackBufferWidth - ballTexture.Width / 2)
+            if (ballPosition.X > _canvasFixedWidth - ballTexture.Width / 2)
             {
-                ballPosition.X = _graphics.PreferredBackBufferWidth - ballTexture.Width / 2;
+                ballPosition.X = _canvasFixedWidth - ballTexture.Width / 2;
             }
             else if (ballPosition.X < ballTexture.Width / 2)
             {
                 ballPosition.X = ballTexture.Width / 2;
             }
 
-            if (ballPosition.Y > _graphics.PreferredBackBufferHeight - ballTexture.Height / 2)
+            if (ballPosition.Y > _canvasFixedHeight - ballTexture.Height / 2)
             {
-                ballPosition.Y = _graphics.PreferredBackBufferHeight - ballTexture.Height / 2;
+                ballPosition.Y = _canvasFixedHeight - ballTexture.Height / 2;
             }
             else if (ballPosition.Y < ballTexture.Height / 2)
             {
                 ballPosition.Y = ballTexture.Height / 2;
             }
 
-
             var ballRect = new Rectangle((int)ballPosition.X, (int)ballPosition.Y, ballTexture.Width, ballTexture.Height);
             var starRect = new Rectangle((int)starPosition.X, (int)starPosition.Y, starTexture.Width, starTexture.Height);
             if (ballRect.Intersects(starRect))
             {
-                float newStarX = random.Next(0, _graphics.PreferredBackBufferWidth);
-                float newStarY = random.Next(0, _graphics.PreferredBackBufferHeight);
+                float newStarX = random.Next(0, _canvasFixedWidth);
+                float newStarY = random.Next(0, _canvasFixedHeight);
                 starPosition = new Vector2(newStarX, newStarY);
                 score += 10;
             }
@@ -201,16 +211,17 @@ namespace StarBall
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Draw(GameTime gameTime)
         {
-            GraphicsDevice.Clear(Color.CornflowerBlue);
 
-            // TODO: Add your drawing code here
             if (timeLeft <= 0)
             {
                 base.Draw(gameTime);
                 return;
             }
 
-            _spriteBatch.Begin();
+            // Draw graphics on the fixed-size canvas we created
+            GraphicsDevice.SetRenderTarget(_renderCanvas);
+            GraphicsDevice.Clear(Color.CornflowerBlue);
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
             _spriteBatch.Draw(
                 starTexture,
                 starPosition,
@@ -222,9 +233,6 @@ namespace StarBall
                 SpriteEffects.None,
                 0f
             );
-            _spriteBatch.End();
-
-            _spriteBatch.Begin();
             _spriteBatch.Draw(
                 ballTexture,
                 ballPosition,
@@ -238,6 +246,19 @@ namespace StarBall
             );
             _spriteBatch.End();
 
+            // Set graphics target back to the full viewscreen, and add black bars
+            GraphicsDevice.SetRenderTarget(null);
+            GraphicsDevice.Clear(Color.Black);
+            if (!initialSizing)
+            {
+                initialSizing = true;
+                CalcRenderDestination();
+            }
+
+            _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+            // RenderTarget2D inherits from Texture2D so we can draw _renderCanvas just like a texture
+            _spriteBatch.Draw(_renderCanvas, _renderDestination, Color.White);
+            _spriteBatch.End();
 
             base.Draw(gameTime);
         }
